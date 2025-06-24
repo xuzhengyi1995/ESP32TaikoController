@@ -1,0 +1,162 @@
+<header>
+    <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
+    <script>
+        var LK1_data = {
+            y: [],
+            mode: 'lines',
+            name: 'P1 Left Ka',
+            line: {
+                // color: '#80CAF6',
+                shape: 'spline'
+            }
+        }
+        var LD1_data = {
+            y: [],
+            mode: 'lines',
+            name: 'P1 Left Don',
+            line: {
+                // color: '#80CAF6',
+                shape: 'spline'
+            }
+        }
+        var RK1_data = {
+            y: [],
+            mode: 'lines',
+            name: 'P1 Right Ka',
+            line: {
+                // color: '#80CAF6',
+                shape: 'spline'
+            }
+        }
+        var RD1_data = {
+            y: [],
+            mode: 'lines',
+            name: 'P1 Right Don',
+            line: {
+                // color: '#80CAF6',
+                shape: 'spline'
+            }
+        }
+        var LK2_data = {
+            y: [],
+            mode: 'lines',
+            name: 'P12 Left Ka',
+            line: {
+                // color: '#80CAF6',
+                shape: 'spline'
+            }
+        }
+        var LD2_data = {
+            y: [],
+            mode: 'lines',
+            name: 'P2 Left Don',
+            line: {
+                // color: '#80CAF6',
+                shape: 'spline'
+            }
+        }
+        var RK2_data = {
+            y: [],
+            mode: 'lines',
+            name: 'P2 Right Ka',
+            line: {
+                // color: '#80CAF6',
+                shape: 'spline'
+            }
+        }
+        var RD2_data = {
+            y: [],
+            mode: 'lines',
+            name: 'P1 Right Don',
+            line: {
+                // color: '#80CAF6',
+                shape: 'spline'
+            }
+        }
+
+        var plot_data_init = [LK1_data, LD1_data, RD1_data, RK1_data, LK2_data, LD2_data, RD2_data, RK2_data];
+
+        var layout = {}
+
+        var cnt = 0;
+
+        function plot_data(raw_data) {
+            if (raw_data.length < 32) {
+                return;
+            }
+            let data = { y: [] };
+            let print = false;
+            for (let i = 0; i < 32; i += 4) {
+                const val = raw_data[i] + (raw_data[i + 1] << 8) + (raw_data[i + 2] << 16) + (raw_data[i + 3] << 24);
+                if (val != 0) {
+                    print = true;
+                }
+                data.y.push([val]);
+            }
+            if (print) {
+                Plotly.extendTraces('data', data, [0, 1, 2, 3, 4, 5, 6, 7]);
+                cnt++;
+            }
+        }
+
+        var port = undefined;
+        var reader = undefined;
+        async function start() {
+            Plotly.newPlot('data', plot_data_init, layout);
+
+            port = await navigator.serial.requestPort();
+            await port.open({ baudRate: 115200 });
+            reader = port.readable.getReader();
+            let data = [];
+            let start = false;
+
+            const WAIT_R = 0;
+            const WAIT_N = 1;
+            const WAIT_0 = 2;
+            const READ = 3;
+
+            let next_state = {
+                0: { 13: WAIT_N },
+                1: { 10: WAIT_0 },
+                2: { 0: READ },
+                3: {}
+            }
+            let current_sate = WAIT_R;
+            while (true) {
+                const { value, done } = await reader.read();
+                if (done) {
+                    reader.releaseLock();
+                    break;
+                }
+                let length = value.length;
+                for (let i = 0; i < length; i++) {
+                    if (start) {
+                        data.push(value[i])
+                    }
+                    current_sate = next_state[current_sate][value[i]];
+                    if (current_sate == undefined) {
+                        current_sate = WAIT_R;
+                    }
+
+                    if (current_sate == READ) {
+                        plot_data(data);
+                        // console.log(data);
+                        data.length = 0;
+                        start = true;
+                    }
+                }
+            }
+        }
+
+        async function close() {
+            reader.cancel();
+            await port.close();
+        }
+    </script>
+</header>
+
+<body>
+    <button onclick="start()">start</button>
+    <button onclick="stop()">stop</button>
+    <div id="data" style="width:98vw;height:90vh;"></div>
+</body>
